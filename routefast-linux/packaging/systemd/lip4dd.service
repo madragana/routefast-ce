@@ -1,0 +1,14 @@
+[Unit]
+Description=LIP-4D peer protocol daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/lip4dd
+WorkingDirectory=/etc/routefast
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+node_id: rt-edge-17
+domain: baltersan-net.local
+listen_addr: :8090
+actuator_url: http://127.0.0.1:8092
+lip4d_url: http://127.0.0.1:8091
+audit_path: routefast-audit.jsonl
+dry_run: true
+key_seed: baltersan-routefast-demo-seed
+max_impacted_prefixes: 4
+max_ttl_seconds: 900
+require_quorum: true
+allowed_actions:
+- EXPLAIN_ONLY
+- BLOCK_SOURCE
+- SHIFT_SERVICE_CLASS_TO_BEARER
+high_impact_actions:
+- SHIFT_SERVICE_CLASS_TO_BEARER

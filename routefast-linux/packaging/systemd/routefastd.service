@@ -1,0 +1,14 @@
+[Unit]
+Description=routefast local orchestrator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/routefastd
+WorkingDirectory=/etc/routefast
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

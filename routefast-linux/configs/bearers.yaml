@@ -1,0 +1,31 @@
+- name: fiber0
+  media_type: fiber
+  admin_state: up
+  oper_state: down
+  priority: 90
+  jam_resistance: 0.30
+  trust_score: 0.90
+  throughput_mbps: 1000
+  preferred_for:
+  - bulk
+- name: lte0
+  media_type: lte
+  admin_state: up
+  oper_state: up
+  priority: 70
+  jam_resistance: 0.55
+  trust_score: 0.75
+  throughput_mbps: 120
+  preferred_for:
+  - critical-control
+- name: radio0
+  media_type: radio
+  admin_state: up
+  oper_state: up
+  priority: 80
+  jam_resistance: 0.92
+  trust_score: 0.82
+  throughput_mbps: 8
+  preferred_for:
+  - rescue-path
+  - critical-control

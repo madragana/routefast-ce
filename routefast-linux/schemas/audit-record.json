@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Audit Record",
+  "type": "object",
+  "required": ["timestamp", "decision", "policy", "result"],
+  "properties": {
+    "timestamp": {"type": "string", "format": "date-time"},
+    "decision": {"$ref": "model-decision.json"},
+    "policy": {"type": "string"},
+    "result": {"type": "string"}
+  }
+}

@@ -1,0 +1,4 @@
+- node_id: rt-edge-17
+  url: http://127.0.0.1:8091
+  public_key: HvYY5fG7xfOhjcBqzlNqTQ0AEBb98H0yPckr9rY8b/U=
+  role: local
