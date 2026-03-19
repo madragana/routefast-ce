@@ -3,6 +3,7 @@ package actuation
 import (
     "context"
     "fmt"
+    "os"
     "os/exec"
     "strings"
 
@@ -10,11 +11,12 @@ import (
 )
 
 type Result struct {
-    Applied     bool     `json:"applied"`
-    Mode        string   `json:"mode"`
-    Summary     string   `json:"summary"`
-    Commands    []string `json:"commands"`
-    RollbackETA int      `json:"rollback_eta"`
+    Applied     bool                   `json:"applied"`
+    Mode        string                 `json:"mode"`
+    Summary     string                 `json:"summary"`
+    Commands    []string               `json:"commands"`
+    RollbackETA int                    `json:"rollback_eta"`
+    Verification map[string]any        `json:"verification,omitempty"`
 }
 
 type Executor struct { DryRun bool }
@@ -27,20 +29,12 @@ func (e *Executor) Plan(d reasoning.Decision) ([]string, error) {
         return []string{"echo explain-only"}, nil
     case "BLOCK_SOURCE":
         if d.Target == "" { return nil, fmt.Errorf("missing target") }
-        return []string{fmt.Sprintf("nft add rule inet routefast input ip saddr %s drop comment \"routefast ttl=%d\"", d.Target, d.RollbackTTLSeconds)}, nil
-    case "SHIFT_SERVICE_CLASS_TO_BEARER":
-        media, _ := d.Constraints["prefer_media"].([]interface{})
-        var pref []string
-        for _, m := range media { pref = append(pref, fmt.Sprint(m)) }
-        if len(pref) == 0 {
-            if xs, ok := d.Constraints["prefer_media"].([]string); ok { pref = xs }
-        }
-        chosen := "radio"
-        if len(pref) > 0 { chosen = pref[0] }
-        return []string{
-            fmt.Sprintf("ip rule add fwmark 0x1 table 101"),
-            fmt.Sprintf("ip route replace default dev %s0 table 101", chosen),
-        }, nil
+        return []string{fmt.Sprintf("nft add rule inet routefast input ip saddr %s drop comment "routefast ttl=%d"", d.Target, d.RollbackTTLSeconds)}, nil
+    case "SHIFT_SERVICE_CLASS_TO_BEARER", "REROUTE_PREFIX", "LOWER_LOCAL_PREF":
+        cmds, err := FRRCommands(d)
+        if err != nil { return nil, err }
+        if len(cmds) > 0 { return cmds, nil }
+        return []string{"echo no-op"}, nil
     default:
         return nil, fmt.Errorf("unsupported action %s", d.Action)
     }
@@ -49,8 +43,9 @@ func (e *Executor) Plan(d reasoning.Decision) ([]string, error) {
 func (e *Executor) Apply(ctx context.Context, d reasoning.Decision) (Result, error) {
     cmds, err := e.Plan(d)
     if err != nil { return Result{}, err }
-    res := Result{Applied: true, RollbackETA: d.RollbackTTLSeconds, Commands: cmds}
-    if e.DryRun {
+    res := Result{Applied: true, RollbackETA: d.RollbackTTLSeconds, Commands: cmds, Verification: VerifyPlan(d, cmds)}
+    live := os.Getenv("ROUTEFAST_EXECUTE") == "1"
+    if e.DryRun || !live {
         res.Mode = "dry-run"
         res.Summary = strings.Join(cmds, " && ")
         return res, nil
