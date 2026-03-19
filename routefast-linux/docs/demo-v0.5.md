@@ -1,32 +1,15 @@
-# routefast-linux v0.5
+# RouteFast v0.5 Demo
 
-First distributed RouteFast prototype with:
-- peer-to-peer LIP-4D over authenticated HTTP
-- corroboration and quorum logic
-- active signed heartbeats
-- peer state gossip
-- mini dashboard for swarm status
+## Nodes
+- rt-a
+- rt-b
+- rt-c
 
-## Demo
-
-Generate keys:
-
-```bash
-./scripts/genkeys.sh
-```
-
-Start three peers:
+## Run
 
 ```bash
 PORT=9443 PEERS_FILE=./configs/peers-rt-a.yaml NODE_FILE=./configs/node-rt-a.yaml go run ./cmd/lip4dd
 PORT=9444 PEERS_FILE=./configs/peers-rt-b.yaml NODE_FILE=./configs/node-rt-b.yaml go run ./cmd/lip4dd
 PORT=9445 PEERS_FILE=./configs/peers-rt-c.yaml NODE_FILE=./configs/node-rt-c.yaml go run ./cmd/lip4dd
-```
-
-Start dashboard/control node:
-
-```bash
 PEERS_FILE=./configs/peers-rt-a.yaml NODE_FILE=./configs/node-rt-a.yaml QUORUM_FILE=./configs/quorum.yaml ROUTEFASTD_ADDR=:8080 go run ./cmd/routefastd
 ```
-
-Open `http://127.0.0.1:8080/dashboard`.

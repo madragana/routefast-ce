@@ -1,0 +1,7 @@
+node:
+  id: rt-a
+  domain: lab.routefast.local
+  listen_addr: 127.0.0.1:9443
+  role: edge
+  region: west
+  private_key_file: ./configs/keys/rt-a.key

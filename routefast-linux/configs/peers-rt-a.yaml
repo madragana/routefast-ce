@@ -1,0 +1,12 @@
+peers:
+  - node_id: rt-b
+    address: http://127.0.0.1:9444
+    role: transit
+    pubkey: "ed25519:REPLACE_WITH_RT_B_PUBKEY"
+    region: west
+
+  - node_id: rt-c
+    address: http://127.0.0.1:9445
+    role: edge
+    pubkey: "ed25519:REPLACE_WITH_RT_C_PUBKEY"
+    region: south

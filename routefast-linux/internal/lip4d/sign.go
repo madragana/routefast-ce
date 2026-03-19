@@ -2,45 +2,25 @@ package lip4d
 
 import (
     "crypto/ed25519"
-    "crypto/sha256"
     "encoding/base64"
-    "encoding/hex"
     "encoding/json"
-    "fmt"
 )
 
-func SeedToPrivateKey(seed string) ed25519.PrivateKey {
-    sum := sha256.Sum256([]byte(seed))
-    return ed25519.NewKeyFromSeed(sum[:])
+type signableEnvelope struct {
+    LIP4DVersion string `json:"lip4d_version"`
+    MessageType string `json:"message_type"`
+    MessageID string `json:"message_id"`
+    IntentID string `json:"intent_id,omitempty"`
+    Sender Sender `json:"sender"`
+    Body interface{} `json:"body"`
+    Time TimeWindow `json:"time"`
 }
-
-func PublicKeyString(pub ed25519.PublicKey) string {
-    return base64.StdEncoding.EncodeToString(pub)
+func CanonicalBytes(env Envelope) ([]byte, error) {
+    return json.Marshal(signableEnvelope{LIP4DVersion: env.LIP4DVersion, MessageType: env.MessageType, MessageID: env.MessageID, IntentID: env.IntentID, Sender: env.Sender, Body: env.Body, Time: env.Time})
 }
-
-func EvidenceDigest(evidence []string) string {
-    buf, _ := json.Marshal(evidence)
-    sum := sha256.Sum256(buf)
-    return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-func SignEnvelope(e *Envelope, priv ed25519.PrivateKey) error {
-    payload, err := canonicalPayload(*e)
+func Sign(env *Envelope, priv ed25519.PrivateKey) error {
+    b, err := CanonicalBytes(*env)
     if err != nil { return err }
-    e.Signature = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, payload))
+    env.Signature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(priv, b))
     return nil
-}
-
-func VerifyEnvelope(e Envelope, pub ed25519.PublicKey) error {
-    sig, err := base64.StdEncoding.DecodeString(e.Signature)
-    if err != nil { return err }
-    payload, err := canonicalPayload(e)
-    if err != nil { return err }
-    if !ed25519.Verify(pub, payload, sig) { return fmt.Errorf("invalid signature") }
-    return nil
-}
-
-func canonicalPayload(e Envelope) ([]byte, error) {
-    e.Signature = ""
-    return json.Marshal(e)
 }

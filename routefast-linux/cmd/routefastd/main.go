@@ -2,133 +2,48 @@ package main
 
 import (
     "context"
+    "crypto/ed25519"
     "encoding/json"
-    "fmt"
     "log"
     "net/http"
     "os"
-    "os/signal"
-    "sync"
-    "syscall"
     "time"
-
-    "github.com/aovidi/routefast-linux/internal/actuation"
-    "github.com/aovidi/routefast-linux/internal/config"
-    "github.com/aovidi/routefast-linux/internal/explain"
-    "github.com/aovidi/routefast-linux/internal/httpx"
+    rfcrypto "github.com/aovidi/routefast-linux/internal/crypto"
+    "github.com/aovidi/routefast-linux/internal/dashboard"
     "github.com/aovidi/routefast-linux/internal/lip4d"
     "github.com/aovidi/routefast-linux/internal/policy"
-    "github.com/aovidi/routefast-linux/internal/reasoning"
-    "github.com/aovidi/routefast-linux/internal/telemetry"
+    "github.com/aovidi/routefast-linux/internal/swarm"
 )
-
-type server struct {
-    cfg      config.Policy
-    engine   *reasoning.Engine
-    audit    *explain.Audit
-    events   []telemetry.Event
-    mu       sync.Mutex
-    sequence int64
+type nodeConfig struct { Node struct { ID, Domain, ListenAddr, Role, Region, PrivateKeyFile string `yaml:",omitempty"` } `yaml:"node"` }
+func getenv(k, d string) string { v := os.Getenv(k); if v == "" { return d }; return v }
+func mustLoadPrivateKey(path string) ed25519.PrivateKey { priv, err := rfcrypto.LoadPrivateKey(path); if err != nil { log.Fatal(err) }; return priv }
+type App struct { Node nodeConfig; Peers swarm.PeersConfig; Quorum swarm.QuorumConfig; Client *lip4d.Client; State *dashboard.State; Poller *dashboard.PeerPoller }
+func (a *App) PollPeersNow() error { return a.Poller.PollPeersNow() }
+func (a *App) RunDemoCorroboration() (any, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second); defer cancel()
+    intentID := "intent-demo-1"; peerConf := []float64{}; accepts, rejects, uncertain := 0,0,0
+    for _, p := range a.Peers.Peers {
+        env := lip4d.Envelope{LIP4DVersion:"0.5", MessageType:"REQUEST_CORROBORATION", MessageID:"msg-"+p.NodeID+"-"+time.Now().UTC().Format("150405"), IntentID:intentID, Body: map[string]any{"query": map[string]any{"subject":"uplink_disruption","target":"203.0.113.0/24","window_seconds":30}, "local_summary": map[string]any{"confidence":0.82,"evidence":[]string{"bgp_withdraw_peer3","loss_spike_fiber0"}}}, Time: lip4d.TimeWindow{CreatedAt: time.Now().UTC().Format(time.RFC3339), NotAfter: time.Now().UTC().Add(30*time.Second).Format(time.RFC3339), Sequence: time.Now().UnixNano()}}
+        resp, err := a.Client.Post(ctx, p.Address+"/v1/corroborate", env); if err != nil { a.State.AddEvent("peer_error", p.NodeID+": "+err.Error()); continue }
+        var out map[string]any; _ = json.NewDecoder(resp.Body).Decode(&out); _ = resp.Body.Close(); a.State.UpdatePeerHeartbeat(p.NodeID, time.Now().UTC())
+        verdict, _ := out["verdict"].(string); conf, _ := out["confidence"].(float64)
+        switch verdict { case "agree": accepts++; peerConf = append(peerConf, conf); case "disagree": rejects++; default: uncertain++ }
+    }
+    rule := a.Quorum.Quorum["class_b"]; result := swarm.Evaluate(rule, 0.82, accepts, rejects, uncertain, len(a.Peers.Peers), peerConf); result.IntentID = intentID; result.ActionClass = "class_b"; a.State.SetLastQuorum(result); return result, nil
 }
-
 func main() {
-    cfg, err := config.LoadPolicy("configs/policy.yaml")
-    if err != nil { log.Fatal(err) }
-    bearers, _ := config.LoadBearers("configs/bearers.yaml")
-    s := &server{cfg: cfg, engine: reasoning.NewEngine(bearers), audit: explain.NewAudit(cfg.AuditPath), sequence: 1}
-
-    ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-    defer cancel()
-
-    mux := http.NewServeMux()
-    mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
-    mux.HandleFunc("/event", s.handleEvent)
-    mux.HandleFunc("/decision", s.handleDecision)
-
-    srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux}
-    go func() {
-        <-ctx.Done()
-        _ = srv.Shutdown(context.Background())
-    }()
-    log.Printf("routefastd listening on %s", cfg.ListenAddr)
-    log.Fatal(srv.ListenAndServe())
+    var peers swarm.PeersConfig; var node nodeConfig; var quorum swarm.QuorumConfig
+    if err := policy.LoadYAML(getenv("PEERS_FILE", "./configs/peers-rt-a.yaml"), &peers); err != nil { log.Fatal(err) }
+    if err := policy.LoadYAML(getenv("NODE_FILE", "./configs/node-rt-a.yaml"), &node); err != nil { log.Fatal(err) }
+    if err := policy.LoadYAML(getenv("QUORUM_FILE", "./configs/quorum.yaml"), &quorum); err != nil { log.Fatal(err) }
+    priv := mustLoadPrivateKey(node.Node.PrivateKeyFile)
+    client := lip4d.NewClient(node.Node.ID, node.Node.Role, "ed25519:"+node.Node.ID+":1", priv)
+    state := dashboard.NewState(node.Node.ID, node.Node.Role); state.SetPeers(peers.Peers); state.AddEvent("startup", "routefastd started")
+    poller := dashboard.NewPeerPoller(peers, state)
+    app := &App{Node: node, Peers: peers, Quorum: quorum, Client: client, State: state, Poller: poller}
+    ctx, cancel := context.WithCancel(context.Background()); defer cancel(); go poller.Start(ctx, 5*time.Second)
+    mux := http.NewServeMux(); dashboard.NewHandlers(state, app, app).Register(mux)
+    addr := getenv("ROUTEFASTD_ADDR", ":8080")
+    log.Printf("routefastd dashboard listening on %s", addr)
+    log.Fatal(http.ListenAndServe(addr, mux))
 }
-
-func (s *server) handleEvent(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
-    var ev telemetry.Event
-    if err := json.NewDecoder(r.Body).Decode(&ev); err != nil { http.Error(w, err.Error(), http.StatusBadRequest); return }
-    if ev.Timestamp.IsZero() { ev.Timestamp = time.Now().UTC() }
-    s.mu.Lock(); s.events = append(s.events, ev); s.mu.Unlock()
-    w.WriteHeader(http.StatusAccepted)
-}
-
-func (s *server) handleDecision(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost && r.Method != http.MethodGet { http.Error(w, "method not allowed", http.StatusMethodNotAllowed); return }
-    s.mu.Lock()
-    batch := append([]telemetry.Event(nil), s.events...)
-    s.events = nil
-    s.mu.Unlock()
-
-    decision, err := s.engine.Decide(r.Context(), batch)
-    if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
-    if err := policy.Authorize(s.cfg, decision.Action, decision.RollbackTTLSeconds); err != nil {
-        _ = s.audit.Write(decision, "denied", err.Error())
-        http.Error(w, err.Error(), http.StatusForbidden)
-        return
-    }
-    if decision.PeerCorroborationRequired || policy.IsHighImpact(s.cfg, decision.Action) {
-        env := s.makeEnvelope(decision)
-        var validation lip4d.ValidationResponse
-        if err := httpx.PostJSON(r.Context(), s.cfg.LIP4DURL+"/intent", env, &validation); err != nil {
-            _ = s.audit.Write(decision, "corroboration_failed", err.Error())
-            http.Error(w, err.Error(), http.StatusBadGateway)
-            return
-        }
-    }
-    var applyRes actuation.Result
-    if err := httpx.PostJSON(r.Context(), s.cfg.ActuatorURL+"/apply", decision, &applyRes); err != nil {
-        _ = s.audit.Write(decision, "apply_failed", err.Error())
-        http.Error(w, err.Error(), http.StatusBadGateway)
-        return
-    }
-    _ = s.audit.Write(decision, "applied", applyRes.Summary)
-    w.Header().Set("Content-Type", "application/json")
-    _ = json.NewEncoder(w).Encode(map[string]any{"decision": decision, "apply_result": applyRes})
-}
-
-func (s *server) makeEnvelope(d reasoning.Decision) lip4d.Envelope {
-    now := time.Now().UTC()
-    s.sequence++
-    env := lip4d.Envelope{
-        LIP4DVersion: "0.1",
-        MessageType:  "PROPOSE_INTENT",
-        IntentID:     fmt.Sprintf("intent-%d", now.UnixNano()),
-        Sender:       lip4d.Sender{NodeID: s.cfg.NodeID, Domain: s.cfg.Domain, KeyID: "ed25519:" + s.cfg.NodeID + ":1"},
-        Purpose:      lip4d.Purpose{Verb: stringsToVerb(d.Action), Object: "network-action", Target: d.Target},
-        Context:      map[string]any{"impact": d.ImpactEstimate, "constraints": d.Constraints},
-        Reason:       lip4d.Reason{Summary: d.Reason, Evidence: d.Evidence, EvidenceDigest: lip4d.EvidenceDigest(d.Evidence)},
-        Authorization: lip4d.Authorization{Role: "edge-autonomy", ROEProfile: "defensive-resilience", RequestedCapability: capabilityForAction(d.Action)},
-        Time:         lip4d.Timing{CreatedAt: now, NotAfter: now.Add(time.Duration(max(d.RollbackTTLSeconds, 60))*time.Second), TTLSeconds: max(d.RollbackTTLSeconds, 60), Sequence: s.sequence},
-    }
-    _ = lip4d.SignEnvelope(&env, lip4d.SeedToPrivateKey(s.cfg.KeySeed))
-    return env
-}
-
-func stringsToVerb(action string) string {
-    switch action {
-    case "BLOCK_SOURCE": return "block"
-    case "SHIFT_SERVICE_CLASS_TO_BEARER": return "reroute"
-    default: return "explain"
-    }
-}
-
-func capabilityForAction(action string) string {
-    switch action {
-    case "BLOCK_SOURCE": return "network.block.temporary"
-    case "SHIFT_SERVICE_CLASS_TO_BEARER": return "route.reroute.temporary"
-    default: return "network.explain"
-    }
-}
-
-func max(a,b int) int { if a>b { return a }; return b }
