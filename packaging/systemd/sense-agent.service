@@ -1,0 +1,14 @@
+[Unit]
+Description=routefast telemetry sense agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sense-agent
+WorkingDirectory=/etc/routefast
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

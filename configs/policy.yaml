@@ -1,0 +1,11 @@
+node_id: rt-edge-17
+allowed_actions:
+  - EXPLAIN_ONLY
+  - BLOCK_SOURCE
+  - SHIFT_SERVICE_CLASS_TO_BEARER
+high_impact_actions:
+  - WITHDRAW_PREFIX_TEMPORARY
+  - QUARANTINE_VRF
+max_impacted_prefixes: 4
+max_ttl_seconds: 900
+require_quorum: true

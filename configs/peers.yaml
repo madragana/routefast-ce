@@ -1,0 +1,9 @@
+peers:
+  - node_id: rt-edge-18
+    address: 10.10.10.18:7443
+    key_id: ed25519:rt-edge-18:1
+    trust: pinned
+  - node_id: rt-core-01
+    address: 10.10.10.1:7443
+    key_id: ed25519:rt-core-01:1
+    trust: pinned

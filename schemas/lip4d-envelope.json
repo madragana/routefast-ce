@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LIP-4D Envelope",
+  "type": "object",
+  "required": ["lip4d_version", "message_type", "intent_id", "sender", "purpose", "reason", "authorization", "time", "signature"],
+  "properties": {
+    "lip4d_version": {"type": "string"},
+    "message_type": {"type": "string"},
+    "intent_id": {"type": "string"},
+    "sender": {
+      "type": "object",
+      "required": ["node_id", "key_id"],
+      "properties": {
+        "node_id": {"type": "string"},
+        "domain": {"type": "string"},
+        "key_id": {"type": "string"}
+      }
+    },
+    "purpose": {
+      "type": "object",
+      "required": ["verb", "object", "target"],
+      "properties": {
+        "verb": {"type": "string"},
+        "object": {"type": "string"},
+        "target": {"type": "string"}
+      }
+    },
+    "reason": {
+      "type": "object",
+      "required": ["summary", "evidence", "evidence_digest"],
+      "properties": {
+        "summary": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "evidence_digest": {"type": "string"}
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "required": ["requested_capability"],
+      "properties": {
+        "role": {"type": "string"},
+        "roe_profile": {"type": "string"},
+        "requested_capability": {"type": "string"}
+      }
+    },
+    "time": {
+      "type": "object",
+      "required": ["created_at", "not_after", "ttl_seconds", "sequence"],
+      "properties": {
+        "created_at": {"type": "string", "format": "date-time"},
+        "not_after": {"type": "string", "format": "date-time"},
+        "ttl_seconds": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "sequence": {"type": "integer"}
+      }
+    },
+    "signature": {"type": "string"}
+  }
+}

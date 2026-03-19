@@ -1,0 +1,26 @@
+bearers:
+  - name: fiber0
+    media_type: fiber
+    admin_state: up
+    oper_state: up
+    latency_ms: 12
+    loss_pct: 0.1
+    jitter_ms: 1
+    trust_score: 0.95
+  - name: lte0
+    media_type: lte
+    admin_state: up
+    oper_state: degraded
+    latency_ms: 55
+    loss_pct: 0.9
+    jitter_ms: 8
+    trust_score: 0.82
+  - name: radio0
+    media_type: radio
+    admin_state: up
+    oper_state: up
+    latency_ms: 140
+    loss_pct: 2.3
+    jitter_ms: 21
+    jam_resistance_score: 0.72
+    trust_score: 0.83
